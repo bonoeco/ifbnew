@@ -79,6 +79,29 @@ const 配置默认值 = {
   ispTelecom: 'yes'
 };
 
+// 单用户统一有效期。
+// Cloudflare 环境变量示例：EXPIRES_AT=2026-12-31T23:59:59+08:00
+// 留空或删除 EXPIRES_AT 表示永久有效。
+function 检查统一有效期(环境值 = {}) {
+  const 原始值 = String(环境值.EXPIRES_AT || 环境值.expires_at || '').trim();
+  if (!原始值) return { 已过期: false };
+
+  let 到期毫秒;
+  if (/^\d{10}$/.test(原始值)) {
+    到期毫秒 = Number(原始值) * 1000;
+  } else if (/^\d{13}$/.test(原始值)) {
+    到期毫秒 = Number(原始值);
+  } else {
+    到期毫秒 = Date.parse(原始值);
+  }
+
+  if (!Number.isFinite(到期毫秒)) return { 配置错误: true };
+  return {
+    已过期: Date.now() >= 到期毫秒,
+    到期时间: new Date(到期毫秒).toISOString()
+  };
+}
+
 function 是否开启值(值, 默认启用 = false) {
   if (值 === undefined || 值 === null || 值 === '') return 默认启用;
   if (值 === true || 值 === false) return 值;
@@ -610,6 +633,32 @@ function 解析地址值端口(输入) {
 export default {
   async fetch(请求735, 本地值734, 本地值733) {
     try {
+      const 有效期状态 = 检查统一有效期(本地值734);
+      if (有效期状态.配置错误) {
+        return new Response(JSON.stringify({
+          error: 'EXPIRES_AT 配置格式错误',
+          example: '2026-12-31T23:59:59+08:00'
+        }), {
+          status: 500,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store'
+          }
+        });
+      }
+      if (有效期状态.已过期) {
+        return new Response(JSON.stringify({
+          error: 'Expired',
+          message: '该分享已到期',
+          expiresAt: 有效期状态.到期时间
+        }), {
+          status: 403,
+          headers: {
+            'Content-Type': 'application/json; charset=utf-8',
+            'Cache-Control': 'no-store'
+          }
+        });
+      }
       const 是否网页套接字 = 请求735.headers.get('Upgrade') === atob('d2Vic29ja2V0');
       const 是否值732 = 请求735.method === 'POST';
       const 请求网址731 = new URL(请求735.url);
@@ -1078,7 +1127,7 @@ export default {
             html, body { height: 100%; }
             body {
                 font-family: "JetBrains Mono", "Fira Code", "Courier New", monospace;
-                background: radial-gradient(ellipse at 20% 10%, #2a0040 0%, var(--cp-bg) 55%, #000 100%);
+                background: #edf3f8;
                 color: var(--cp-text);
                 min-height: 100vh;
                 overflow-x: hidden;
@@ -1086,6 +1135,7 @@ export default {
                 display: flex; justify-content: center; align-items: center;
             }
             body::before {
+                display: none;
                 content: ""; position: fixed; inset: 0;
                 background-image:
                     linear-gradient(var(--cp-grid) 1px, transparent 1px),
@@ -1096,6 +1146,7 @@ export default {
                 animation: cp-grid-slide 18s linear infinite;
             }
             body::after {
+                display: none;
                 content: ""; position: fixed; inset: 0;
                 background: repeating-linear-gradient(
                     180deg,
@@ -1118,6 +1169,7 @@ export default {
                 50% { opacity: 0.9; }
             }
             .matrix-bg {
+                display: none;
                 position: fixed; inset: 0;
                 background:
                     radial-gradient(circle at 80% 90%, rgba(255,43,214,0.18) 0%, transparent 45%),
@@ -1127,6 +1179,7 @@ export default {
             }
             .matrix-rain { display: none; }
             .matrix-code-rain {
+                display: none;
                 position: fixed; inset: 0;
                 pointer-events: none; z-index: -1;
                 overflow: hidden;
@@ -1322,7 +1375,7 @@ export default {
             body.fx-off .matrix-column { display: none !important; }
             body.fx-off::before,
             body.fx-off::after { display: none !important; content: none !important; }
-            body.fx-off { background: var(--cp-bg) !important; }
+            body.fx-off { background: #edf3f8 !important; }
             body.fx-off * {
                 animation: none !important;
                 transition: color 0.15s, background-color 0.15s, border-color 0.15s, box-shadow 0.15s !important;
@@ -1342,11 +1395,37 @@ export default {
                     -2px 0 var(--cp-pink),
                     2px 0 var(--cp-mint);
             }
+            /* Clean UI: light page shell, readable controls, compact mobile layout */
+            .cp-hud {
+                color: #16324a;
+                opacity: 1;
+                text-shadow: none;
+            }
+            .cp-hud .cp-hud-label { color: #a21caf; }
+            .cp-lang-tag {
+                color: #7e22ce;
+                text-shadow: none;
+            }
+            #languageSelector {
+                background: #ffffff;
+                color: #0f5263;
+                border-color: #0891b2;
+                text-shadow: none;
+                box-shadow: 0 6px 18px rgba(15, 82, 99, 0.16);
+            }
+            .terminal {
+                box-shadow: 0 18px 55px rgba(15, 23, 42, 0.22), 0 0 0 1px rgba(8, 145, 178, 0.15);
+            }
+            @media (max-width: 720px) {
+                .cp-hud { top: 12px; right: 12px; font-size: 9px; letter-spacing: 0.1em; }
+                .cp-lang-wrapper { top: 12px; left: 12px; }
+                .cp-lang-tag { display: none; }
+                #languageSelector { padding: 5px 8px; }
+                .terminal { width: calc(100% - 20px); height: auto; min-height: 500px; margin-top: 72px; }
+            }
         </style>
     </head>
     <body>
-        <div class="matrix-bg"></div>
-        <div class="matrix-code-rain" id="matrixCodeRain"></div>
             <div class="cp-hud">
                 <span class="cp-hud-line"><span class="cp-hud-label">SYS::</span> ${翻译值659.terminal}</span>
                 <span class="cp-hud-line"><span class="cp-hud-label">NODE::</span> NIGHT_CITY</span>
@@ -1359,10 +1438,6 @@ export default {
                     <option value="fa" ${是否值664 ? 'selected' : ''}>🇮🇷 فارسی</option>
                 </select>
             </div>
-            <button type="button" id="cpFxToggle" class="cp-fx-toggle" onclick="window.切换页面特效()" title="${是否值664 ? 'تغییر افکت‌های صفحه' : '切换页面特效'}" aria-label="FX toggle">
-                <span class="cp-fx-dot" aria-hidden="true"></span>
-                <span id="cpFxLabel">FX: ON</span>
-            </button>
         <div class="terminal">
             <div class="terminal-header">
                 <div class="terminal-buttons">
@@ -4339,13 +4414,14 @@ async function 处理订阅值(请求241, 用户240 = null) {
             html, body { min-height: 100%; }
             body {
                 font-family: "JetBrains Mono", "Fira Code", "Courier New", monospace;
-                background: radial-gradient(ellipse at 80% -10%, #2a0040 0%, var(--cp-bg) 50%, #000 100%);
+                background: #edf3f8;
                 color: var(--cp-text);
                 min-height: 100vh;
                 overflow-x: hidden;
                 position: relative;
             }
             body::before {
+                display: none;
                 content: ""; position: fixed; inset: 0;
                 background-image:
                     linear-gradient(var(--cp-grid) 1px, transparent 1px),
@@ -4357,6 +4433,7 @@ async function 处理订阅值(请求241, 用户240 = null) {
                 pointer-events: none;
             }
             body::after {
+                display: none;
                 content: ""; position: fixed; inset: 0;
                 background: repeating-linear-gradient(
                     180deg,
@@ -4379,6 +4456,7 @@ async function 处理订阅值(请求241, 用户240 = null) {
                 50% { opacity: 0.85; }
             }
             .matrix-bg {
+                display: none;
                 position: fixed; inset: 0;
                 background:
                     radial-gradient(circle at 85% 15%, rgba(255,43,214,0.18) 0%, transparent 45%),
@@ -4389,6 +4467,7 @@ async function 处理订阅值(请求241, 用户240 = null) {
             }
             .matrix-rain { display: none; }
             .matrix-code-rain {
+                display: none;
                 position: fixed; inset: 0;
                 pointer-events: none; z-index: -1;
                 overflow: hidden;
@@ -4446,10 +4525,12 @@ async function 处理订阅值(请求241, 用户240 = null) {
             }
             .header::after {
                 content: "STATUS // ONLINE";
-                position: absolute; top: 8px; right: 24px;
+                position: absolute; top: 8px; right: 84px;
                 font-size: 10px; letter-spacing: 0.35em;
                 color: var(--cp-mint);
                 text-shadow: 0 0 6px var(--cp-mint);
+                white-space: nowrap;
+                z-index: 2;
             }
             .title {
                 font-size: clamp(2.2rem, 5vw, 3.4rem);
@@ -4683,7 +4764,7 @@ async function 处理订阅值(请求241, 用户240 = null) {
             body.fx-off .matrix-column { display: none !important; }
             body.fx-off::before,
             body.fx-off::after { display: none !important; content: none !important; }
-            body.fx-off { background: var(--cp-bg) !important; }
+            body.fx-off { background: #edf3f8 !important; }
             body.fx-off * {
                 animation: none !important;
                 transition: color 0.15s, background-color 0.15s, border-color 0.15s, box-shadow 0.15s !important;
@@ -5217,6 +5298,11 @@ async function 处理订阅值(请求241, 用户240 = null) {
                 .container { padding: 100px 14px 140px; }
                 .card { padding: 22px 18px; }
                 .header { padding: 22px 18px; }
+                .header::after {
+                    right: 72px;
+                    font-size: 9px;
+                    letter-spacing: 0.18em;
+                }
                 .title { font-size: 2rem; }
                 .cp-hud { font-size: 9px; }
                 .cp-action-bar {
@@ -5235,11 +5321,44 @@ async function 处理订阅值(请求241, 用户240 = null) {
                 .cp-action-status { right: 50%; transform: translate(50%, 8px); }
                 .cp-action-status.cp-show { transform: translate(50%, 0); }
             }
+            @media (max-width: 520px) {
+                .header::before { display: none; }
+            }
+
+            /* Clean UI: light shell with high-contrast functional panels */
+            .cp-hud {
+                color: #16324a;
+                opacity: 1;
+                text-shadow: none;
+            }
+            .cp-hud .cp-hud-label { color: #a21caf; }
+            .cp-lang-tag {
+                color: #7e22ce;
+                text-shadow: none;
+            }
+            #languageSelector {
+                background: #ffffff;
+                color: #0f5263;
+                border-color: #0891b2;
+                text-shadow: none;
+                box-shadow: 0 6px 18px rgba(15, 82, 99, 0.16);
+            }
+            .container { max-width: 1120px; }
+            .header,
+            .card {
+                box-shadow: 0 16px 42px rgba(15, 23, 42, 0.16);
+            }
+            .card { margin-bottom: 24px; }
+            @media (max-width: 720px) {
+                .cp-hud { top: 12px; right: 12px; letter-spacing: 0.1em; }
+                .cp-lang-wrapper { top: 12px; left: 12px; }
+                .cp-lang-tag { display: none; }
+                #languageSelector { padding: 5px 8px; }
+                .container { padding-top: 88px; }
+            }
         </style>
     </head>
     <body>
-        <div class="matrix-bg"></div>
-        <div class="matrix-code-rain" id="matrixCodeRain"></div>
             <div class="cp-hud">
                 <span class="cp-hud-line"><span class="cp-hud-label">SYS::</span> ${翻译值.terminal}</span>
                 <span class="cp-hud-line"><span class="cp-hud-label">NODE::</span> NIGHT_CITY</span>
@@ -5252,10 +5371,6 @@ async function 处理订阅值(请求241, 用户240 = null) {
                     <option value="fa" ${是否值236 ? 'selected' : ''}>🇮🇷 فارسی</option>
                 </select>
             </div>
-            <button type="button" id="cpFxToggle" class="cp-fx-toggle" onclick="window.切换页面特效()" title="${是否值236 ? 'تغییر افکت‌های صفحه' : '切换页面特效'}" aria-label="FX toggle">
-                <span class="cp-fx-dot" aria-hidden="true"></span>
-                <span id="cpFxLabel">FX: ON</span>
-            </button>
         <div class="container">
             <div class="header">
                     <h1 class="title cp-glitch" data-text="${翻译值.title}">${翻译值.title}</h1>
